@@ -1,65 +1,164 @@
-import Image from "next/image";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export default function Home() {
+  const router = useRouter();
+  const [account, setAccount] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const isDisabled = !account.trim() || !password.trim();
+
+  function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (account === "admin" && password === "admin") {
+      router.push("/dashboard");
+      return;
+    }
+    setError("账号或密码错误");
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f9fafb",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "48px 16px",
+        fontFamily: "Inter, system-ui, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          width: 420,
+          backgroundColor: "#ffffff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 10,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
+          padding: 36,
+        }}
+      >
+        <div style={{ marginBottom: 22, textAlign: "center" }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: 0 }}>
+            腾讯简历系统
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: 14 }}>
+            <label
+              htmlFor="account"
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: 6,
+              }}
+            >
+              账号
+            </label>
+            <input
+              id="account"
+              type="text"
+              value={account}
+              placeholder="admin"
+              onChange={(e) => {
+                setAccount(e.target.value);
+                setError("");
+              }}
+              style={{
+                width: "100%",
+                height: 38,
+                padding: "0 12px",
+                fontSize: 14,
+                color: "#111827",
+                backgroundColor: "#fff",
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "#0052D9")}
+              onBlur={(e) => (e.target.style.borderColor = "#d1d5db")}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label
+              htmlFor="password"
+              style={{
+                display: "block",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#374151",
+                marginBottom: 6,
+              }}
+            >
+              密码
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              placeholder="admin"
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+              }}
+              style={{
+                width: "100%",
+                height: 38,
+                padding: "0 12px",
+                fontSize: 14,
+                color: "#111827",
+                backgroundColor: "#fff",
+                border: `1px solid ${error ? "#ef4444" : "#d1d5db"}`,
+                borderRadius: 8,
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = error ? "#ef4444" : "#0052D9")}
+              onBlur={(e) => (e.target.style.borderColor = error ? "#ef4444" : "#d1d5db")}
+            />
+          </div>
+
+          {error && (
+            <div style={{ fontSize: 12, color: "#ef4444", marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isDisabled}
+            style={{
+              width: "100%",
+              height: 40,
+              borderRadius: 8,
+              border: "none",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: isDisabled ? "not-allowed" : "pointer",
+              backgroundColor: isDisabled ? "#d1d5db" : "#0052D9",
+              color: "#fff",
+              transition: "background-color 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              if (!isDisabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#0047BF";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = isDisabled ? "#d1d5db" : "#0052D9";
+            }}
           >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            登录看板
+          </button>
+        </form>
+      </div>
+    </main>
   );
 }
