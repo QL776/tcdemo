@@ -6,6 +6,7 @@ export const PROJECT_STATS = {
   manual_review_rate: 16.7,
   manual_review_threshold: 20,
   interview_ratio: 7.8,
+  interview_pool: { total: 18, pending: 12, notified: 6 },
   funnel: [
     { stage: "投递", count: 12000, percent: 100 },
     { stage: "AI 通过", count: 9200, percent: 76.7 },

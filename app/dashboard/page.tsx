@@ -13,7 +13,7 @@ import {
 import type { Application, AnalysisResult } from "@/lib/types";
 import AnalyticsView from "@/components/analytics-view";
 import type { Candidate, OperationLog } from "@/lib/storage";
-import { enrichApplications, generateMockCandidates } from "@/lib/storage";
+import { enrichApplications, generateInterviewPoolMock, generateMockCandidates } from "@/lib/storage";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +55,7 @@ function getDecisionText(decision: string) {
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 
 const MOCK_CANDIDATES: Candidate[] = generateMockCandidates(80);
+const INTERVIEW_POOL_MOCK: Candidate[] = generateInterviewPoolMock(18);
 
 // ─── Shared card wrapper ──────────────────────────────────────────────────────
 
@@ -288,7 +289,7 @@ function ComplianceModule() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<"pool" | "analytics">("pool");
+  const [tab, setTab] = useState<"pool" | "interview" | "analytics">("pool");
   const [viewMode, setViewMode] = useState<"list" | "detail">("list");
   
   const [apps, setApps] = useState<Candidate[]>([]);
@@ -301,6 +302,7 @@ export default function DashboardPage() {
   const [listJob, setListJob] = useState("all");
   const [listStatus, setListStatus] = useState<"all" | "review" | "pass" | "reject" | "done">("all");
   const [listOwner, setListOwner] = useState("all");
+  const [scoreRange, setScoreRange] = useState<"all" | "high" | "mid" | "low">("all");
   const [scoreSort, setScoreSort] = useState<"none" | "asc" | "desc">("none");
   const [pageSize, setPageSize] = useState(15);
   const [page, setPage] = useState(1);
@@ -309,6 +311,15 @@ export default function DashboardPage() {
   const [assignName, setAssignName] = useState("王五");
   const [collabOpen, setCollabOpen] = useState(false);
   const [collabToast, setCollabToast] = useState<{ id: string; text: string } | null>(null);
+  const [globalToast, setGlobalToast] = useState<string | null>(null);
+
+  const [interviewSearch, setInterviewSearch] = useState("");
+  const [interviewJob, setInterviewJob] = useState("all");
+  const [interviewNotify, setInterviewNotify] = useState<"all" | "pending" | "notified">("all");
+  const [interviewPageSize, setInterviewPageSize] = useState(15);
+  const [interviewPage, setInterviewPage] = useState(1);
+  const [interviewSelectedMap, setInterviewSelectedMap] = useState<Record<string, boolean>>({});
+  const [notifyModal, setNotifyModal] = useState<{ ids: string[] } | null>(null);
 
   const [groupOpen, setGroupOpen] = useState<Record<"review" | "pass" | "reject" | "done", boolean>>({
     review: true,
@@ -324,24 +335,66 @@ export default function DashboardPage() {
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const STORAGE_KEY = "jd_lens_dashboard_apps_v1";
+
+    // Build a map of saved enrichments from localStorage (manual decisions, notes, etc.)
+    const localMap: Record<string, Candidate> = {};
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Candidate[];
+        if (Array.isArray(parsed)) {
+          for (const a of parsed) localMap[a.id] = a;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Always fetch from API to pick up newly uploaded resumes
     fetch("/api/applications")
       .then((r) => r.json())
       .then((data: Application[]) => {
-        // Merge real data with mock data
         const real = enrichApplications(data);
-        const combined: Candidate[] = [...real, ...MOCK_CANDIDATES];
-        const sorted = combined
-          .slice()
-          .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+
+        // For real (non-mock) apps: preserve localStorage enrichments if they exist
+        const mergedReal = real.map((a) => localMap[a.id] ?? a);
+
+        // Keep mock/interview-pool items from localStorage; add defaults if first load
+        const savedMocks = Object.values(localMap).filter(
+          (a) => !real.some((r) => r.id === a.id)
+        );
+        const hasMocks = savedMocks.length > 0;
+
+        const combined: Candidate[] = [
+          ...mergedReal,
+          ...(hasMocks ? savedMocks : [...MOCK_CANDIDATES, ...INTERVIEW_POOL_MOCK]),
+        ];
+
+        const sorted = combined.slice().sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
         setApps(sorted);
-        setReviewNotes(
-          Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""]))
-        );
-        setCollabNotes(
-          Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""]))
-        );
+        setReviewNotes(Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""])));
+        setCollabNotes(Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""])));
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
+      })
+      .catch(() => {
+        // API unavailable — fall back to localStorage only
+        const saved = Object.values(localMap);
+        if (saved.length > 0) {
+          const sorted = saved.slice().sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+          setApps(sorted);
+          setReviewNotes(Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""])));
+          setCollabNotes(Object.fromEntries(sorted.filter((a) => a.reviewNote).map((a) => [a.id, a.reviewNote ?? ""])));
+        }
       });
   }, []);
+
+  useEffect(() => {
+    const STORAGE_KEY = "jd_lens_dashboard_apps_v1";
+    if (typeof window === "undefined") return;
+    if (apps.length === 0) return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+  }, [apps]);
 
   const jobOptions = useMemo(() => {
     return Array.from(new Set(apps.map((a) => a.jobTitle))).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
@@ -356,6 +409,52 @@ export default function DashboardPage() {
   const effectiveSelectedId = selectedId;
   const selected = apps.find((a) => a.id === effectiveSelectedId) ?? null;
   const pdfPreviewUrl = selected ? `/api/applications?id=${encodeURIComponent(selected.id)}&pdf=1` : "";
+
+  const interviewPool = useMemo(() => {
+    const base = apps.filter(
+      (a) => a.final_decision === "pass" && (a.interview_status === "pending" || a.interview_status === "notified")
+    );
+    const filtered = base.filter((a) => {
+      if (interviewNotify !== "all" && a.interview_status !== interviewNotify) return false;
+      if (interviewSearch.trim()) {
+        const q = interviewSearch.trim().toLowerCase();
+        const id = a.id.toLowerCase();
+        const j = (a.jobTitle || "").toLowerCase();
+        if (!id.includes(q) && !j.includes(q)) return false;
+      }
+      if (interviewJob !== "all" && a.jobTitle !== interviewJob) return false;
+      return true;
+    });
+    return filtered.slice().sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
+  }, [apps, interviewJob, interviewNotify, interviewSearch]);
+
+  const interviewStats = useMemo(() => {
+    const total = apps.filter(
+      (a) => a.final_decision === "pass" && (a.interview_status === "pending" || a.interview_status === "notified")
+    ).length;
+    const pending = apps.filter((a) => a.final_decision === "pass" && a.interview_status === "pending").length;
+    const notified = apps.filter((a) => a.final_decision === "pass" && a.interview_status === "notified").length;
+    return { total, pending, notified };
+  }, [apps]);
+
+  const interviewPageCount = useMemo(
+    () => Math.max(1, Math.ceil(interviewPool.length / interviewPageSize)),
+    [interviewPool.length, interviewPageSize]
+  );
+
+  const pagedInterviewPool = useMemo(() => {
+    const start = (interviewPage - 1) * interviewPageSize;
+    return interviewPool.slice(start, start + interviewPageSize);
+  }, [interviewPool, interviewPage, interviewPageSize]);
+
+  useEffect(() => {
+    setInterviewPage(1);
+    setInterviewSelectedMap({});
+  }, [interviewSearch, interviewJob, interviewNotify, interviewPageSize]);
+
+  useEffect(() => {
+    if (interviewPage > interviewPageCount) setInterviewPage(interviewPageCount);
+  }, [interviewPage, interviewPageCount]);
 
   // ─── Grouping & Filtering for Left Panel in Detail View ───────────────────────
   const pendingLists = useMemo(() => {
@@ -406,6 +505,13 @@ export default function DashboardPage() {
       if (listJob !== "all" && a.jobTitle !== listJob) return false;
       if (listOwner !== "all" && a.current_owner?.name !== listOwner) return false;
 
+      if (scoreRange !== "all") {
+        const s = a.analysisResult?.overall_score ?? -1;
+        if (scoreRange === "high" && s < 85) return false;
+        if (scoreRange === "mid" && (s < 60 || s >= 85)) return false;
+        if (scoreRange === "low" && s >= 60) return false;
+      }
+
       return true;
     });
 
@@ -419,7 +525,7 @@ export default function DashboardPage() {
         if (sa !== sb) return (sa - sb) * dir;
         return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
       });
-  }, [apps, listJob, listOwner, listSearch, listStatus, scoreSort]);
+  }, [apps, listJob, listOwner, listSearch, listStatus, scoreRange, scoreSort]);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(listData.length / pageSize)), [listData.length, pageSize]);
   const pagedListData = useMemo(() => {
@@ -430,7 +536,7 @@ export default function DashboardPage() {
   useEffect(() => {
     setPage(1);
     setSelectedMap({});
-  }, [listSearch, listJob, listStatus, listOwner, scoreSort, pageSize]);
+  }, [listSearch, listJob, listStatus, listOwner, scoreRange, scoreSort, pageSize]);
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
@@ -661,9 +767,15 @@ export default function DashboardPage() {
         collaboration_stage: "已完成",
         current_owner: { role: "HR", name: "李四" },
         operation_logs: [newLog, ...(selected.operation_logs ?? [])],
+        final_decision: currentDecision === "pass" ? "pass" : currentDecision === "reject" ? "reject" : null,
+        interview_status: currentDecision === "pass" ? "pending" : null,
       });
       if (!needReason && !note) {
         setReviewNotes((p) => ({ ...p, [selected.id]: reasonUsed }));
+      }
+      if (currentDecision === "pass") {
+        setGlobalToast("候选人已加入待面试池");
+        window.setTimeout(() => setGlobalToast(null), 2200);
       }
       // if it's a real item, persist it
       if (!selected.id.startsWith("mock-")) {
@@ -698,84 +810,109 @@ export default function DashboardPage() {
     const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => Boolean(selectedMap[id]));
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", backgroundColor: "#fff" }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, backgroundColor: "#fff" }}>
         {/* Toolbar */}
         <div
           style={{
-            height: 80,
-            padding: "0 24px",
+            padding: "12px 24px",
             borderBottom: "1px solid #e5e7eb",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            position: "sticky",
-            top: 56,
-            zIndex: 40,
+            flexDirection: "column",
+            gap: 10,
             backgroundColor: "#fff",
+            flexShrink: 0,
           }}
         >
-          <div>
+          {/* 标题行 */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 18, fontWeight: 600 }}>候选人池 · 共 {apps.length.toLocaleString()} 份</div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>已筛选 {listData.length} 条</div>
           </div>
-
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <input 
-              placeholder="搜索候选人编号 / 投递岗位" 
+          {/* 筛选行 */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              placeholder="搜索候选人编号 / 投递岗位"
               value={listSearch}
               onChange={e => setListSearch(e.target.value)}
-              style={{ padding: "6px 12px", border: "1px solid #d1d5db", borderRadius: 4, width: 200, fontSize: 13 }} 
+              style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, width: 190, fontSize: 13 }}
             />
-            <select value={listJob} onChange={e => setListJob(e.target.value)} style={{ padding: "6px 12px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
+            <select value={listJob} onChange={e => setListJob(e.target.value)} style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
               <option value="all">全部岗位</option>
               {jobOptions.map(j => <option key={j} value={j}>{j}</option>)}
             </select>
-            <select value={listStatus} onChange={e => setListStatus(e.target.value as typeof listStatus)} style={{ padding: "6px 12px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
+            <select value={listStatus} onChange={e => setListStatus(e.target.value as typeof listStatus)} style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
               <option value="all">全部状态</option>
               <option value="review">待定复查</option>
               <option value="pass">推荐通过</option>
               <option value="reject">建议淘汰</option>
               <option value="done">已处理</option>
             </select>
-            <select value={listOwner} onChange={(e) => setListOwner(e.target.value)} style={{ padding: "6px 12px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
+            <select value={scoreRange} onChange={e => setScoreRange(e.target.value as typeof scoreRange)} style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
+              <option value="all">全部得分</option>
+              <option value="high">高分 ≥85</option>
+              <option value="mid">中等 60-84</option>
+              <option value="low">低分 &lt;60</option>
+            </select>
+            <select value={listOwner} onChange={(e) => setListOwner(e.target.value)} style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}>
               <option value="all">全部责任人</option>
               {ownerOptions.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
+                <option key={o} value={o}>{o}</option>
               ))}
             </select>
+            {(listSearch || listJob !== "all" || listStatus !== "all" || scoreRange !== "all" || listOwner !== "all") && (
+              <button
+                onClick={() => { setListSearch(""); setListJob("all"); setListStatus("all"); setScoreRange("all"); setListOwner("all"); }}
+                style={{ padding: "5px 10px", border: "1px solid #e5e7eb", borderRadius: 4, fontSize: 13, backgroundColor: "#f9fafb", color: "#6b7280", cursor: "pointer" }}
+              >
+                清除筛选
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Table */}
-        <div style={{ flex: 1, overflow: "auto", padding: "0 24px", maxHeight: "calc(100vh - 192px)" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-            <thead style={{ position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 10 }}>
-              <tr style={{ borderBottom: "1px solid #e5e7eb", color: "#6b7280", fontSize: 13 }}>
-                 <th style={{ padding: "16px 12px", width: 40 }}>
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={(e) => toggleSelectAll(visibleIds, e.target.checked)}
-                  />
-                 </th>
-                 <th style={{ padding: "16px 12px" }}>编号</th>
-                 <th style={{ padding: "16px 12px" }}>投递岗位</th>
-                 <th style={{ padding: "16px 12px" }}>投递时间</th>
-                 <th
-                   onClick={() =>
-                     setScoreSort((s) => (s === "none" ? "desc" : s === "desc" ? "asc" : "none"))
-                   }
-                   style={{ padding: "16px 12px", cursor: "pointer", userSelect: "none" }}
-                 >
-                   得分{scoreSort === "asc" ? " ↑" : scoreSort === "desc" ? " ↓" : ""}
-                 </th>
-                 <th style={{ padding: "16px 12px" }}>状态</th>
-                 <th style={{ padding: "16px 12px" }}>责任人</th>
-                 <th style={{ padding: "16px 12px", textAlign: "right" }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* 强制显示的表头 */}
+          <div style={{ 
+            padding: "0 24px", 
+            borderBottom: "2px solid #e5e7eb", 
+            backgroundColor: "#f9fafb", 
+            position: "relative", 
+            zIndex: 50,
+            flexShrink: 0
+          }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
+              <thead>
+                <tr style={{ color: "#4b5563", fontSize: 13, height: 48 }}>
+                   <th style={{ padding: "0 12px", width: 52 }}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={(e) => toggleSelectAll(visibleIds, e.target.checked)}
+                      style={{ width: 18, height: 18, cursor: "pointer" }}
+                    />
+                   </th>
+                   <th style={{ padding: "0 12px", width: 180, fontWeight: 700, color: "#111827" }}>编号 / 姓名</th>
+                   <th style={{ padding: "0 12px", width: 140, fontWeight: 700, color: "#111827" }}>投递岗位</th>
+                   <th style={{ padding: "0 12px", width: 150, fontWeight: 700, color: "#111827" }}>投递时间</th>
+                   <th
+                     onClick={() =>
+                       setScoreSort((s) => (s === "none" ? "desc" : s === "desc" ? "asc" : "none"))
+                     }
+                     style={{ padding: "0 12px", cursor: "pointer", userSelect: "none", width: 80, fontWeight: 700, color: "#111827" }}
+                   >
+                     得分{scoreSort === "asc" ? " ↑" : scoreSort === "desc" ? " ↓" : ""}
+                   </th>
+                   <th style={{ padding: "0 12px", width: 120, fontWeight: 700, color: "#111827" }}>状态</th>
+                   <th style={{ padding: "0 12px", width: 140, fontWeight: 700, color: "#111827" }}>责任人</th>
+                   <th style={{ padding: "0 12px", textAlign: "right", width: 90, fontWeight: 700, color: "#111827" }}>操作</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 24px", minHeight: 0 }} ref={listRef}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
+              <tbody>
                {pagedListData.map(c => {
                  const score = c.analysisResult?.overall_score;
                  const isDone = Boolean(c.reviewedAt);
@@ -794,32 +931,33 @@ export default function DashboardPage() {
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = "#f9fafb"}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                   >
-                     <td style={{ padding: "16px 12px" }}>
+                     <td style={{ padding: "16px 12px", width: 52 }}>
                       <input
                         type="checkbox"
                         checked={Boolean(selectedMap[c.id])}
                         onClick={e => e.stopPropagation()}
                         onChange={(e) => toggleSelectOne(c.id, e.target.checked)}
+                        style={{ width: 18, height: 18, cursor: "pointer" }}
                       />
                      </td>
-                     <td style={{ padding: "16px 12px" }}>
+                     <td style={{ padding: "16px 12px", width: 180 }}>
                       <div style={{ fontWeight: 600, fontSize: 14, color: "#111827" }}>#{c.id.replace(/\D/g, "").slice(-4).padStart(4, "0")}</div>
                       <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{candidateName(c)}</div>
                      </td>
-                     <td style={{ padding: "16px 12px", color: "#4b5563", fontSize: 13 }}>{c.jobTitle}</td>
-                     <td style={{ padding: "16px 12px", color: "#6b7280", fontSize: 13 }}>{fmt(c.submittedAt)}</td>
-                     <td style={{ padding: "16px 12px", fontWeight: 600, fontSize: 14 }}>{score || '-'}</td>
-                     <td style={{ padding: "16px 12px" }}>
+                     <td style={{ padding: "16px 12px", width: 140, color: "#4b5563", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.jobTitle}</td>
+                     <td style={{ padding: "16px 12px", width: 150, color: "#6b7280", fontSize: 13 }}>{fmt(c.submittedAt)}</td>
+                     <td style={{ padding: "16px 12px", width: 80, fontWeight: 600, fontSize: 14 }}>{score || '-'}</td>
+                     <td style={{ padding: "16px 12px", width: 120 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, backgroundColor: bg, color: text, padding: "4px 8px", borderRadius: 4, fontWeight: 500 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: STATUS_COLOR[decision], display: "inline-block" }} />
                           {label}
                           {sampled && <span title="随机抽中">🎲</span>}
                         </span>
                      </td>
-                     <td style={{ padding: "16px 12px", color: "#4b5563", fontSize: 13 }}>
+                     <td style={{ padding: "16px 12px", width: 140, color: "#4b5563", fontSize: 13 }}>
                       {c.current_owner?.role} · {c.current_owner?.name}
                      </td>
-                     <td style={{ padding: "16px 12px", textAlign: "right" }}>
+                     <td style={{ padding: "16px 12px", width: 90, textAlign: "right" }}>
                         <button style={{ color: "#1e40af", fontSize: 13, fontWeight: 500, background: "none", border: "none", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); openDetail(c); }}>查看</button>
                      </td>
                   </tr>
@@ -831,34 +969,381 @@ export default function DashboardPage() {
             <div style={{ padding: 40, textAlign: "center", color: "#6b7280", fontSize: 14 }}>没有找到匹配的记录</div>
           )}
         </div>
+      </div>
 
-        {/* Pagination */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderTop: "1px solid #e5e7eb", color: "#6b7280", fontSize: 13, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 30 }}>
-          <div>共 {listData.length} 条记录 · 第 {page} / {pageCount} 页</div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-             <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ border: "1px solid #d1d5db", borderRadius: 4, padding: "4px 8px", backgroundColor: "#fff" }}>
-                <option value={10}>10 条/页</option>
-                <option value={15}>15 条/页</option>
-                <option value={20}>20 条/页</option>
-                <option value={50}>50 条/页</option>
-             </select>
-             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-               <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? "#9ca3af" : "#374151" }}>上一页</button>
-               <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: page >= pageCount ? "not-allowed" : "pointer", color: page >= pageCount ? "#9ca3af" : "#374151" }}>下一页</button>
-               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                 <span>跳转</span>
-                 <input
-                   value={String(page)}
-                   onChange={(e) => {
-                     const v = Number(e.target.value.replace(/\D/g, "")) || 1;
-                     setPage(Math.max(1, Math.min(pageCount, v)));
-                   }}
-                   style={{ width: 56, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4 }}
-                 />
-               </div>
+      {/* Pagination */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderTop: "1px solid #e5e7eb", color: "#6b7280", fontSize: 13, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 30 }}>
+        <div>共 {listData.length} 条记录 · 第 {page} / {pageCount} 页</div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ border: "1px solid #d1d5db", borderRadius: 4, padding: "4px 8px", backgroundColor: "#fff" }}>
+              <option value={10}>10 条/页</option>
+              <option value={15}>15 条/页</option>
+              <option value={20}>20 条/页</option>
+              <option value={50}>50 条/页</option>
+           </select>
+           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: page <= 1 ? "not-allowed" : "pointer", color: page <= 1 ? "#9ca3af" : "#374151" }}>上一页</button>
+             <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: page >= pageCount ? "not-allowed" : "pointer", color: page >= pageCount ? "#9ca3af" : "#374151" }}>下一页</button>
+             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+               <span>跳转</span>
+               <input
+                 value={String(page)}
+                 onChange={(e) => {
+                   const v = Number(e.target.value.replace(/\D/g, "")) || 1;
+                   setPage(Math.max(1, Math.min(pageCount, v)));
+                 }}
+                 style={{ width: 56, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4 }}
+               />
              </div>
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  function renderInterviewView() {
+    const visibleIds = pagedInterviewPool.map((c) => c.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => Boolean(interviewSelectedMap[id]));
+    const selectedIds = Object.keys(interviewSelectedMap).filter((id) => interviewSelectedMap[id]);
+    const pendingSelectedIds = selectedIds.filter(
+      (id) => (apps.find((a) => a.id === id)?.interview_status ?? null) === "pending"
+    );
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, backgroundColor: "#fff" }}>
+        <div
+          style={{
+            padding: "12px 24px",
+            borderBottom: "1px solid #e5e7eb",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            backgroundColor: "#fff",
+            flexShrink: 0,
+          }}
+        >
+          {/* 标题行 */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 600 }}>待面试池 · 共 {interviewStats.total.toLocaleString()} 人</div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280" }}>
+                待发送通知 {interviewStats.pending.toLocaleString()} / 已发送通知 {interviewStats.notified.toLocaleString()} · 当前面录比 7.8:1（目标 ≤8:1）
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>已筛选 {interviewPool.length} 人</div>
+          </div>
+          {/* 筛选行 */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              placeholder="搜索候选人编号 / 投递岗位"
+              value={interviewSearch}
+              onChange={(e) => setInterviewSearch(e.target.value)}
+              style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, width: 190, fontSize: 13 }}
+            />
+            <select
+              value={interviewJob}
+              onChange={(e) => setInterviewJob(e.target.value)}
+              style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}
+            >
+              <option value="all">全部岗位</option>
+              {jobOptions.map((j) => (
+                <option key={j} value={j}>{j}</option>
+              ))}
+            </select>
+            <select
+              value={interviewNotify}
+              onChange={(e) => setInterviewNotify(e.target.value as typeof interviewNotify)}
+              style={{ padding: "5px 10px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, backgroundColor: "#fff" }}
+            >
+              <option value="all">全部通知状态</option>
+              <option value="pending">待通知</option>
+              <option value="notified">已通知</option>
+            </select>
+            {(interviewSearch || interviewJob !== "all" || interviewNotify !== "all") && (
+              <button
+                onClick={() => { setInterviewSearch(""); setInterviewJob("all"); setInterviewNotify("all"); }}
+                style={{ padding: "5px 10px", border: "1px solid #e5e7eb", borderRadius: 4, fontSize: 13, backgroundColor: "#f9fafb", color: "#6b7280", cursor: "pointer" }}
+              >
+                清除筛选
+              </button>
+            )}
+            <div style={{ marginLeft: "auto" }}>
+            <button
+              disabled={pendingSelectedIds.length === 0}
+              onClick={() => {
+                if (pendingSelectedIds.length === 0) return;
+                setNotifyModal({ ids: pendingSelectedIds });
+              }}
+              style={{
+                backgroundColor: pendingSelectedIds.length === 0 ? "#9ca3af" : "#1e40af",
+                color: "#fff",
+                padding: "5px 12px",
+                borderRadius: 4,
+                fontSize: 13,
+                fontWeight: 600,
+                border: "none",
+                cursor: pendingSelectedIds.length === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              批量发送面试通知
+            </button>
+            </div>
           </div>
         </div>
+
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* 强制显示的表头 */}
+          <div style={{ 
+            padding: "0 24px", 
+            borderBottom: "2px solid #e5e7eb", 
+            backgroundColor: "#f9fafb", 
+            position: "relative", 
+            zIndex: 50,
+            flexShrink: 0
+          }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
+              <thead>
+                <tr style={{ color: "#4b5563", fontSize: 13, height: 48 }}>
+                  <th style={{ padding: "0 12px", width: 52 }}>
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setInterviewSelectedMap((prev) => {
+                          const next = { ...prev };
+                          for (const id of visibleIds) {
+                            if (checked) next[id] = true;
+                            else delete next[id];
+                          }
+                          return next;
+                        });
+                      }}
+                      style={{ width: 18, height: 18, cursor: "pointer" }}
+                    />
+                  </th>
+                  <th style={{ padding: "0 12px", width: 180, fontWeight: 700, color: "#111827" }}>编号 / 姓名</th>
+                  <th style={{ padding: "0 12px", width: 140, fontWeight: 700, color: "#111827" }}>投递岗位</th>
+                  <th style={{ padding: "0 12px", width: 150, fontWeight: 700, color: "#111827" }}>投递时间</th>
+                  <th style={{ padding: "0 12px", width: 80, fontWeight: 700, color: "#111827" }}>AI 得分</th>
+                  <th style={{ padding: "0 12px", width: 120, fontWeight: 700, color: "#111827" }}>通知状态</th>
+                  <th style={{ padding: "0 12px", width: 140, fontWeight: 700, color: "#111827" }}>责任人</th>
+                  <th style={{ padding: "0 12px", textAlign: "right", width: 90, fontWeight: 700, color: "#111827" }}>操作</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 24px", minHeight: 0 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", tableLayout: "fixed" }}>
+              <tbody>
+              {pagedInterviewPool.map((c) => {
+                const score = c.analysisResult?.overall_score ?? "-";
+                const pending = c.interview_status === "pending";
+                const statusBg = pending ? "#ffedd5" : "#dcfce7";
+                const statusText = pending ? "#9a3412" : "#166534";
+                const statusDot = pending ? "#f59e0b" : "#10b981";
+                const code = `#${c.id.replace(/\\D/g, "").slice(-4).padStart(4, "0")}`;
+
+                return (
+                  <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }} onClick={() => { setTab("pool"); openDetail(c); }}>
+                    <td style={{ padding: "16px 12px", width: 52 }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(interviewSelectedMap[c.id])}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const checked = e.target.checked;
+                          setInterviewSelectedMap((prev) => {
+                            const next = { ...prev };
+                            if (checked) next[c.id] = true;
+                            else delete next[c.id];
+                            return next;
+                          });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ width: 18, height: 18, cursor: "pointer" }}
+                      />
+                    </td>
+                    <td style={{ padding: "16px 12px", width: 180 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: "#111827" }}>{code}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{candidateName(c)}</div>
+                    </td>
+                    <td style={{ padding: "16px 12px", width: 140, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.jobTitle}</td>
+                    <td style={{ padding: "16px 12px", width: 150, color: "#6b7280", fontSize: 13 }}>{fmt(c.submittedAt)}</td>
+                    <td style={{ padding: "16px 12px", width: 80, fontWeight: 700, color: "#111827" }}>{score}</td>
+                    <td style={{ padding: "16px 12px", width: 120 }}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 12,
+                          backgroundColor: statusBg,
+                          color: statusText,
+                          padding: "4px 8px",
+                          borderRadius: 4,
+                          fontWeight: 600,
+                          border: "1px solid #e5e7eb",
+                        }}
+                      >
+                        <span style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: statusDot, display: "inline-block" }} />
+                        {pending ? "待通知" : "已通知"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "16px 12px", width: 140, color: "#4b5563", fontSize: 13 }}>
+                      {c.current_owner?.role} · {c.current_owner?.name}
+                    </td>
+                    <td style={{ padding: "16px 12px", width: 90, textAlign: "right" }}>
+                      {pending ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setNotifyModal({ ids: [c.id] }); }}
+                          style={{ color: "#1e40af", fontSize: 13, fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
+                        >
+                          发送通知
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setTab("pool"); openDetail(c); }}
+                          style={{ color: "#1e40af", fontSize: 13, fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
+                        >
+                          查看详情
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {interviewPool.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: "#6b7280", fontSize: 14 }}>没有找到匹配的记录</div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 24px", borderTop: "1px solid #e5e7eb", color: "#6b7280", fontSize: 13, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 30 }}>
+        <div>共 {interviewPool.length} 条记录 · 第 {interviewPage} / {interviewPageCount} 页</div>
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <select value={interviewPageSize} onChange={(e) => setInterviewPageSize(Number(e.target.value))} style={{ border: "1px solid #d1d5db", borderRadius: 4, padding: "4px 8px", backgroundColor: "#fff" }}>
+            <option value={10}>10 条/页</option>
+            <option value={15}>15 条/页</option>
+            <option value={20}>20 条/页</option>
+            <option value={50}>50 条/页</option>
+          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={() => setInterviewPage((p) => Math.max(1, p - 1))} disabled={interviewPage <= 1} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: interviewPage <= 1 ? "not-allowed" : "pointer", color: interviewPage <= 1 ? "#9ca3af" : "#374151" }}>上一页</button>
+            <button onClick={() => setInterviewPage((p) => Math.min(interviewPageCount, p + 1))} disabled={interviewPage >= interviewPageCount} style={{ padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: interviewPage >= interviewPageCount ? "not-allowed" : "pointer", color: interviewPage >= interviewPageCount ? "#9ca3af" : "#374151" }}>下一页</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>跳转</span>
+              <input
+                value={String(interviewPage)}
+                onChange={(e) => {
+                  const v = Number(e.target.value.replace(/\D/g, "")) || 1;
+                  setInterviewPage(Math.max(1, Math.min(interviewPageCount, v)));
+                }}
+                style={{ width: 56, padding: "4px 8px", border: "1px solid #d1d5db", borderRadius: 4 }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+        {notifyModal && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(17,24,39,0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: 16,
+            }}
+          >
+            <div style={{ width: "100%", maxWidth: 520, backgroundColor: "#fff", borderRadius: 10, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid #e5e7eb", fontSize: 15, fontWeight: 700, color: "#111827" }}>
+                发送面试通知
+              </div>
+              <div style={{ padding: 16 }}>
+                <div style={{ fontSize: 13, color: "#374151", marginBottom: 10 }}>
+                  {notifyModal.ids.length === 1
+                    ? `候选人：${notifyModal.ids[0]}（${apps.find((a) => a.id === notifyModal.ids[0])?.jobTitle ?? ""}）`
+                    : `共 ${notifyModal.ids.length} 位候选人`}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>通知内容</div>
+                <div
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    padding: 12,
+                    backgroundColor: "#f9fafb",
+                    fontSize: 13,
+                    color: "#374151",
+                    lineHeight: 1.7,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  亲爱的候选人，恭喜您通过我们的初筛！我们诚挚邀请您参加下一轮面试。请在 24 小时内回复确认可面试时间，我们将为您安排具体场次与链接。
+                </div>
+              </div>
+              <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  onClick={() => setNotifyModal(null)}
+                  style={{
+                    height: 34,
+                    padding: "0 12px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    backgroundColor: "#fff",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#374151",
+                  }}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    const nowIso = new Date().toISOString();
+                    const ids = notifyModal.ids;
+                    for (const id of ids) {
+                      const c = apps.find((a) => a.id === id);
+                      if (!c) continue;
+                      const log: OperationLog = {
+                        timestamp: nowIso,
+                        operator: { role: "雇主品牌", name: "周九", department: "雇主品牌" },
+                        action: "发送面试通知",
+                        reason: "标准模板通知已发送",
+                        resultStatus: "已通知",
+                      };
+                      patchLocal(id, { interview_status: "notified", operation_logs: [log, ...(c.operation_logs ?? [])], last_updated_at: nowIso });
+                    }
+                    setNotifyModal(null);
+                    setGlobalToast("面试通知已发送");
+                    window.setTimeout(() => setGlobalToast(null), 2200);
+                  }}
+                  style={{
+                    height: 34,
+                    padding: "0 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    backgroundColor: "#1e40af",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#fff",
+                  }}
+                >
+                  确认发送
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -931,6 +1416,20 @@ export default function DashboardPage() {
                   </button>
                   {groupOpen[g.key] && g.data.length > 0 && (
                     <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div
+                        style={{
+                          padding: "0 12px",
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 44px",
+                          gap: 10,
+                          fontSize: 12,
+                          color: "#9ca3af",
+                        }}
+                      >
+                        <span>姓名</span>
+                        <span>岗位</span>
+                        <span style={{ textAlign: "right" }}>分数</span>
+                      </div>
                       {g.data.map((a) => {
                         const isSel = a.id === selectedId;
                         return (
@@ -945,12 +1444,16 @@ export default function DashboardPage() {
                               borderLeft: isSel ? "3px solid #1e40af" : "3px solid transparent",
                             }}
                           >
-                            <div style={{ fontSize: 13, fontWeight: 500, color: isSel ? "#1e40af" : "#374151", marginBottom: 4 }}>
-                              {candidateName(a)}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#6b7280", display: "flex", justifyContent: "space-between" }}>
-                              <span>{a.jobTitle}</span>
-                              <span style={{ fontWeight: 500 }}>{a.analysisResult?.overall_score || '-'}</span>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 44px", gap: 10, alignItems: "center" }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: isSel ? "#1e40af" : "#374151", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {candidateName(a)}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#6b7280", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {a.jobTitle}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#111827", fontWeight: 700, textAlign: "right" }}>
+                                {a.analysisResult?.overall_score ?? "-"}
+                              </div>
                             </div>
                           </div>
                         );
@@ -1237,6 +1740,22 @@ export default function DashboardPage() {
             候选人池
           </button>
           <button
+            onClick={() => setTab("interview")}
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: tab === "interview" ? "#1e40af" : "#6b7280",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "0 2px",
+              height: 56,
+              borderBottom: tab === "interview" ? "2px solid #1e40af" : "2px solid transparent",
+            }}
+          >
+            待面试池
+          </button>
+          <button
             onClick={() => setTab("analytics")}
             style={{
               fontSize: 14,
@@ -1273,10 +1792,33 @@ export default function DashboardPage() {
           <div style={{ flex: 1, overflow: "auto" }}>
             <AnalyticsView />
           </div>
+        ) : tab === "interview" ? (
+          renderInterviewView()
         ) : (
           viewMode === "list" ? renderListView() : renderDetailView()
         )}
       </main>
+
+      {globalToast && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: 22,
+            transform: "translateX(-50%)",
+            backgroundColor: "#111827",
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 999,
+            fontSize: 13,
+            fontWeight: 600,
+            zIndex: 1200,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+          }}
+        >
+          {globalToast}
+        </div>
+      )}
     </div>
   );
 }

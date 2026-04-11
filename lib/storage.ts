@@ -25,6 +25,8 @@ export interface Candidate extends Application {
     | "雇主品牌审核中"
     | "已完成";
   operation_logs: OperationLog[];
+  interview_status?: "pending" | "notified" | null;
+  final_decision?: "pass" | "reject" | null;
   audit_sampled?: boolean;
   channel?: "官网" | "内推" | "校招平台" | "宣讲会";
   city?: "北京" | "上海" | "深圳" | "广州" | "杭州";
@@ -272,4 +274,53 @@ export function generateMockCandidates(total: number): Candidate[] {
   });
 
   return candidates.map((a, idx) => withCollaboration(a, idx + 100));
+}
+
+export function generateInterviewPoolMock(total = 18): Candidate[] {
+  const jobs = ["产品经理", "前端开发", "后端开发", "数据分析师"] as const;
+  const notifiedCount = Math.min(6, total);
+  const pendingCount = Math.max(0, total - notifiedCount);
+
+  const apps: Application[] = Array.from({ length: total }).map((_, i) => {
+    const score = 88 + Math.floor((i * 7) % 12);
+    const aiDecision = i % 3 === 0 ? ("review" as const) : ("pass" as const);
+    const aiLabel = aiDecision === "pass" ? "推荐通过" : "待定复查";
+    const action = aiDecision === "pass" ? "进入人工精筛" : "待定复查";
+    const reviewedAt = isoHoursAgo(i % 10);
+
+    return {
+      id: `interview-${String(i + 1).padStart(4, "0")}`,
+      jobId: "mock-job",
+      jobTitle: jobs[i % jobs.length]!,
+      candidateName: `候选人 ${String.fromCharCode(78 + (i % 12))}${i + 10}`,
+      email: `ip${i}@test.com`,
+      resumeText: "",
+      pdfName: `interview-${i}.pdf`,
+      submittedAt: isoHoursAgo(i + 22),
+      status: "analyzed",
+      reviewedAt,
+      reviewDecision: "pass",
+      reviewNote: i % 2 === 0 ? "项目匹配度高，建议推进面试。" : "综合能力较好，建议进入下一轮。",
+      analysisResult: {
+        overall_score: score,
+        status: aiDecision,
+        status_label: aiLabel,
+        action,
+        dimensions: {
+          project: { score: Math.round(score * 0.4), max: 40, explanation: "项目经历完整，能支撑面试推进。" },
+          skills: { score: Math.round(score * 0.3), max: 30, explanation: "核心技能与岗位需求匹配。" },
+          internship: { score: Math.round(score * 0.2), max: 20, explanation: "有相关实习/项目经历，细节较充分。" },
+          growth: { score: Math.round(score * 0.1), max: 10, explanation: "成长性良好，具备持续学习能力。" },
+        },
+        alternative_positions: [],
+      },
+    };
+  });
+
+  const enriched = apps.map((a, idx) => withCollaboration(a, idx + 500));
+  return enriched.map((c, idx) => ({
+    ...c,
+    final_decision: "pass",
+    interview_status: idx < pendingCount ? "pending" : "notified",
+  }));
 }

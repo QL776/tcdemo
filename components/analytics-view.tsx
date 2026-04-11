@@ -272,18 +272,19 @@ export default function AnalyticsView() {
           <div style={{ width: "100%", fontSize: 18, fontWeight: 600, color: "#111827" }}>项目健康度</div>
           <div style={{ marginTop: 22, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ display: "flex", gap: 8 }}>
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} style={{ width: 10, height: 10, borderRadius: 999, backgroundColor: "#10b981" }} />
               ))}
             </div>
             <div style={{ marginTop: 12, fontSize: 24, fontWeight: 700, color: "#111827" }}>健康</div>
-            <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>4 项核心指标全部正常</div>
+            <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>5 项核心指标全部正常</div>
           </div>
-          <div style={{ marginTop: 18, width: "100%", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div style={{ marginTop: 18, width: "100%", display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             <SmallCard label="进度" value={`${progressPercent}%`} sub={`D${s.current_day}/${s.total_days}`} />
             <SmallCard label="效率" value={`${s.manual_review_rate.toFixed(1)}%`} sub="复查率" />
             <SmallCard label="质量" value={`${s.interview_ratio.toFixed(1)}:1`} sub="面录比" />
             <SmallCard label="合规" value={`${s.compliance.complaints}`} sub="投诉数" />
+            <SmallCard label="储备" value={`${s.interview_pool.total}人`} sub="待面试" />
           </div>
         </div>
       </Card>
