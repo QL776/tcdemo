@@ -55,11 +55,72 @@ const OPERATORS = {
 } as const;
 
 const CHANNELS = ["官网", "内推", "校招平台", "宣讲会"] as const;
+
+const ALTERNATIVE_POSITIONS: Record<string, Array<{ position: string; reason: string }[]>> = {
+  产品经理: [
+    [
+      { position: "运营策略专员", reason: "候选人对用户增长路径有清晰认知，具备数据驱动的运营思维，适合负责增长策略与用户生命周期管理。" },
+      { position: "用户研究员", reason: "简历中体现出较强的定性研究能力与用户洞察，适合深度参与用户访谈与需求挖掘工作。" },
+    ],
+    [
+      { position: "商业分析师", reason: "对业务模型及商业逻辑理解到位，具备结构化分析能力，可胜任跨部门业务拆解与决策支持。" },
+      { position: "项目经理（技术方向）", reason: "有推动跨职能协作的经验，对研发流程理解较好，建议考虑技术 PM 方向以发挥协调优势。" },
+    ],
+    [
+      { position: "增长产品经理", reason: "数据分析工具使用熟练，有 A/B 测试经验，转向增长方向有较强竞争力。" },
+    ],
+  ],
+  前端开发: [
+    [
+      { position: "全栈工程师（Node.js 方向）", reason: "候选人具备较扎实的前端工程化能力，适当补充后端基础后可承担全栈职责，拓展职业成长空间。" },
+      { position: "移动端开发工程师（RN）", reason: "React 技能栈与 React Native 高度重合，转型移动端成本较低，可考虑跨平台方向。" },
+    ],
+    [
+      { position: "音视频前端工程师", reason: "简历中涉及 WebRTC 与媒体流处理经验，与音视频前端岗位高度匹配，建议重点考虑。" },
+    ],
+    [
+      { position: "前端架构师（基础设施方向）", reason: "有组件库与工程化平台建设经验，技术深度较好，适合基础设施和工程效能方向的高级岗位。" },
+      { position: "互动游戏前端", reason: "Canvas/WebGL 相关经验突出，游戏业务线对此需求明确，建议同时考虑。" },
+    ],
+  ],
+  后端开发: [
+    [
+      { position: "数据工程师", reason: "有数据处理流水线搭建经验，熟悉大数据工具链，转型数据工程方向有明确优势。" },
+      { position: "平台工程师（DevOps 方向）", reason: "对 CI/CD 和容器化部署有实践经验，适合承担内部基础平台建设职责。" },
+    ],
+    [
+      { position: "算法工程师（工程落地方向）", reason: "后端工程能力扎实，有模型服务化部署经验，可作为算法与工程之间的桥梁角色。" },
+    ],
+    [
+      { position: "服务端开发工程师（游戏业务）", reason: "高并发与状态管理经验与游戏服务端场景契合，建议考虑游戏业务线的服务端岗位。" },
+      { position: "安全工程师（后端方向）", reason: "对系统安全有一定了解，结合后端经验可转型为应用安全方向。" },
+    ],
+  ],
+  数据分析师: [
+    [
+      { position: "数据产品经理", reason: "具备将数据洞察转化为产品功能的思维，沟通能力较强，适合数据产品方向。" },
+      { position: "机器学习工程师（特征工程方向）", reason: "特征工程与建模基础较好，可向 MLE 方向发展，补充工程化能力即可胜任。" },
+    ],
+    [
+      { position: "商业智能工程师", reason: "BI 报表开发与数仓建模经验丰富，建议直接考虑 BI 专项岗位，匹配度更高。" },
+    ],
+    [
+      { position: "风控数据分析师", reason: "对异常识别和规则设计有基础认知，风控数据分析对其经验有较好承接。" },
+      { position: "增长数据分析师", reason: "熟悉用户行为埋点与漏斗分析，增长团队对此类经验需求明确。" },
+    ],
+  ],
+};
 const CITIES = ["北京", "上海", "深圳", "广州", "杭州"] as const;
 const SCHOOL_TIERS = ["985", "211", "双一流", "其他"] as const;
 
 function pick<T>(arr: readonly T[], seed: number) {
   return arr[seed % arr.length]!;
+}
+
+function pickAlternativePositions(jobTitle: string, seed: number): { position: string; reason: string }[] {
+  const key = Object.keys(ALTERNATIVE_POSITIONS).find((k) => jobTitle.includes(k)) ?? "后端开发";
+  const pool = ALTERNATIVE_POSITIONS[key]!;
+  return pool[seed % pool.length]!;
 }
 
 function isoHoursAgo(hours: number) {
@@ -268,7 +329,7 @@ export function generateMockCandidates(total: number): Candidate[] {
           internship: { score: Math.round(score * 0.2), max: 20, explanation: "实习/竞赛经历能支撑岗位判断，但需补充细节。" },
           growth: { score: Math.round(score * 0.1), max: 10, explanation: "成长性表现较好，有持续学习与沉淀的迹象。" },
         },
-        alternative_positions: [],
+        alternative_positions: pickAlternativePositions(jobs[i % jobs.length]!, i),
       },
     };
   });
@@ -312,7 +373,7 @@ export function generateInterviewPoolMock(total = 18): Candidate[] {
           internship: { score: Math.round(score * 0.2), max: 20, explanation: "有相关实习/项目经历，细节较充分。" },
           growth: { score: Math.round(score * 0.1), max: 10, explanation: "成长性良好，具备持续学习能力。" },
         },
-        alternative_positions: [],
+        alternative_positions: pickAlternativePositions(jobs[i % jobs.length]!, i + 10),
       },
     };
   });

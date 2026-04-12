@@ -239,6 +239,13 @@ export default function AnalyticsView() {
   const [openDiversity, setOpenDiversity] = useState(false);
   const [openCompliance, setOpenCompliance] = useState(false);
   const [openAppeals, setOpenAppeals] = useState(false);
+  const [openHrBias, setOpenHrBias] = useState(false);
+
+  const HR_BIAS_DATA = [
+    { name: "李四", ratio: 35, warn: false },
+    { name: "王五", ratio: 42, warn: false },
+    { name: "孙七", ratio: 68, warn: true },
+  ];
 
   const progressPercent = useMemo(() => Math.round((s.current_day / s.total_days) * 100), [s.current_day, s.total_days]);
   const totalManualDone = useMemo(
@@ -499,6 +506,45 @@ export default function AnalyticsView() {
               <div style={{ fontSize: 13, color: "#111827", fontWeight: 600 }}>✓ 决策溯源：{s.compliance.traceability}%</div>
               <div style={{ fontSize: 13, color: "#111827", fontWeight: 600 }}>✓ 投诉数：{s.compliance.complaints}</div>
               <div style={{ fontSize: 13, color: "#111827", fontWeight: 600 }}>✓ 多样性预警：{s.compliance.diversity_alerts}</div>
+            </div>
+          </RiskRow>
+          <div style={{ height: 1, backgroundColor: "#e5e7eb" }} />
+          <RiskRow
+            title="HR 偏差监控"
+            ok={!HR_BIAS_DATA.some((h) => h.warn)}
+            summary={`监控指标：每位 HR 的筛选结果多样性（985 院校占比）`}
+            open={openHrBias}
+            onToggle={() => setOpenHrBias((v) => !v)}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {HR_BIAS_DATA.map((hr) => (
+                <div key={hr.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 14, width: 20, flexShrink: 0, color: hr.warn ? "#f59e0b" : "#10b981" }}>
+                    {hr.warn ? "⚠️" : "✓"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#374151", width: 64, flexShrink: 0 }}>
+                    HR · {hr.name}
+                  </div>
+                  <div style={{ flex: 1, height: 8, backgroundColor: "#f3f4f6", borderRadius: 999, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${hr.ratio}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        backgroundColor: hr.warn ? "#f59e0b" : "#1e40af",
+                        transition: "width 0.3s",
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: hr.warn ? "#92400e" : "#6b7280", width: 100, textAlign: "right", flexShrink: 0 }}>
+                    985 占比 {hr.ratio}%{" "}
+                    <span style={{ fontWeight: 600 }}>({hr.warn ? "需关注" : "正常"})</span>
+                  </div>
+                </div>
+              ))}
+              <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: 10 }}>
+                系统每周自动生成 HR 多样性报告
+              </div>
             </div>
           </RiskRow>
           <div style={{ height: 1, backgroundColor: "#e5e7eb" }} />

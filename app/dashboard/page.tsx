@@ -188,6 +188,7 @@ function ExplainModule({ r }: { r: AnalysisResult }) {
 }
 
 function AlternativeModule({ r }: { r: AnalysisResult }) {
+  if (r.status !== "reject") return null;
   if (!r.alternative_positions || r.alternative_positions.length === 0) return null;
   return (
     <Card>
@@ -361,9 +362,19 @@ export default function DashboardPage() {
         const mergedReal = real.map((a) => localMap[a.id] ?? a);
 
         // Keep mock/interview-pool items from localStorage; add defaults if first load
-        const savedMocks = Object.values(localMap).filter(
-          (a) => !real.some((r) => r.id === a.id)
+        // Patch stale mock items that have empty alternative_positions
+        const freshMockMap = Object.fromEntries(
+          [...MOCK_CANDIDATES, ...INTERVIEW_POOL_MOCK].map((c) => [c.id, c])
         );
+        const savedMocks = Object.values(localMap)
+          .filter((a) => !real.some((r) => r.id === a.id))
+          .map((a) => {
+            const fresh = freshMockMap[a.id];
+            if (fresh && (!a.analysisResult?.alternative_positions?.length)) {
+              return { ...a, analysisResult: a.analysisResult ? { ...a.analysisResult, alternative_positions: fresh.analysisResult?.alternative_positions ?? [] } : a.analysisResult };
+            }
+            return a;
+          });
         const hasMocks = savedMocks.length > 0;
 
         const combined: Candidate[] = [
