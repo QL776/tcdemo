@@ -158,6 +158,21 @@ export default function Home() {
             登录看板
           </button>
         </form>
+
+        <div style={{ marginTop: 16, textAlign: "center" }}>
+          <a
+            href="/jobs"
+            style={{
+              fontSize: 13,
+              color: "#0052D9",
+              textDecoration: "none",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+            onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+          >
+            浏览岗位列表
+          </a>
+        </div>
       </div>
     </main>
   );
